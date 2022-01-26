@@ -1,9 +1,9 @@
 model HelloWorldBDI
 
 global {
-    int nb_tree <- 40; 
-    int nb_deer <- 10;
-    int nb_wolf <- 10;
+    int nb_tree <- 0; 
+    int nb_deer <- 20;
+    int nb_wolf <- 20;
     float step <- 10#mn;
     geometry shape <- square(20 #km);
     
@@ -22,16 +22,14 @@ global {
     predicate find_branch <- new_predicate("find branch");
     predicate share_information <- new_predicate("share information") ;
     
-    predicate deer_location <- new_predicate(deer_at_location) ;
-    predicate find_deer <- new_predicate("find deer") ;
+	predicate deer_location <- new_predicate(deer_at_location) ;
     predicate has_energy <- new_predicate("extract energy");
     predicate eat_energy <- new_predicate("eat energy") ;
     predicate choose_deer <- new_predicate("choose a deer");
     predicate find_energy <- new_predicate("find energy");
     predicate share_information_w <- new_predicate("share information wolf") ;
-
  	
- 	//stat
+ 	//stat variable
  	int stat_nb_deer -> {length(deer)};
 	int stat_nb_tree -> {length(tree)};
 	int stat_nb_wolf -> {length(wolf)};
@@ -77,7 +75,7 @@ global {
                     if (tempDestination !=nil){
                         bool exists<-false;
                         loop tempLink_w over: socialLinkRepresentation{
-                            if((tempLink_w.origin=tempWolf) and (tempLink_w.destination=tempDestination.agent)){
+                            if((tempLink_w.origin_w=tempWolf) and (tempLink_w.destination_w=tempDestination.agent)){
                                 exists<-true;
                             }
                         }
@@ -124,10 +122,12 @@ species socialLinkRepresentation{
 	    deer origin;
 		wolf origin_w;
 	    agent destination;
+	    agent destination_w;
 	    rgb my_color;
 	    
 	    aspect base{
 	        draw line([origin,destination],50.0) color: my_color;
+	        draw line([origin_w,destination_w],50.0) color: my_color;
 	    }
 }
 
@@ -233,6 +233,7 @@ species deer  skills: [moving] control:simple_bdi {
         list<point> possible_trees <- get_beliefs_with_name(tree_at_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
         list<point> empty_trees <- get_beliefs_with_name(empty_tree_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
         possible_trees <- possible_trees - empty_trees;
+//        write "possible tree= " + possible_trees;
         if (empty(possible_trees)) {
             do remove_intention(has_branch, true); 
         } else {
@@ -243,9 +244,9 @@ species deer  skills: [moving] control:simple_bdi {
 //    END DEER
 }
 	
-	//add the simple_bdi architecture to the agents
+	//    START WOLF
 species wolf  skills: [moving] control:simple_bdi {
-//    START WOLF
+//VARIABLE
 	float view_dist<-1000.0;
     float speed <- 2#km/#h;
    	int energy_w_consum <- 5;
@@ -257,29 +258,30 @@ species wolf  skills: [moving] control:simple_bdi {
     int energy_w_reproduce<- 30;
     int nb_max_offsprings_w <- 1;
     deer agent_perceived <- nil;
+   
     
     aspect default {
         draw square(300) color: #red ;
     }
     
 	//define a new predicate that will be used as a desire
-	
+    predicate find_deer <- new_predicate("find deer") ;
 	
 	//at init, add the find_energy to the agent desire base
 	init {
 		do add_desire(find_deer);
 	}
 	
-	reflex reproduce when: (energy_w >= energy_w_reproduce) and (flip(proba_reproduce_w)) {
-		
-		create species(self) number: 1 {
-			create wolf number: 1;
-			location <- myself.location;
-			energy_w <- myself.energy_w - energy_w_reproduce;
-		}
-
-		
-	}
+//	reflex reproduce when: (energy_w >= energy_w_reproduce) and (flip(proba_reproduce_w)) {
+//		
+//		create species(self) number: 1 {
+//			create wolf number: 1;
+//			location <- myself.location;
+//			energy_w <- myself.energy_w - energy_w_reproduce;
+//		}
+//
+//		
+//	}
 	
 	 perceive target: deer where (each.energy > 0) in: view_dist {
 	    focus id:deer_at_location var:location;
@@ -301,17 +303,17 @@ species wolf  skills: [moving] control:simple_bdi {
     rule belief: has_energy new_desire: eat_energy strength: 3.0;
     
 	//definition of a plan that allow to fulfill the  find_energy intention
-	 plan lets_wander intention: find_deer  {
+	 plan lets_wander_wolf intention: find_deer  {
 	        do wander;
 	 }
 	 
  	plan get_energy intention:has_energy {
- 		write "actual target_w" + target_w;
+// 		write "actual target_w" + target_w;
 	    if (target_w = nil) {
 	        do add_subintention(get_current_intention(),choose_deer, true);
 	        do current_intention_on_hold();
 	    } else {
-	        do goto target: target_w ;
+	        do goto target: agent_perceived.location ;
 	        if (target_w = location)  {
 	        
 			//write dead(agent_perceived);
@@ -320,11 +322,14 @@ species wolf  skills: [moving] control:simple_bdi {
 	        if (dead(agent_perceived) = false ) {
 	        	//if deer has energy and wolf not have max energy
 	        if (agent_perceived.energy > 0 and energy_w < max_energy_w){
+	           energy_w <- energy_w + agent_perceived.energy;
 	            do add_belief(has_energy);
-	             energy_w <- energy_w + agent_perceived.energy;
 	            ask agent_perceived {do die;}
 	        } else {
+	            do remove_belief(new_predicate(deer_at_location, ["location_value"::target_w]));
 	            do add_belief(new_predicate(empty_deer_location, ["location_value"::target_w]));
+	            
+	            
 	        }
 	        target_w <- nil;
 	        }
@@ -353,14 +358,13 @@ species wolf  skills: [moving] control:simple_bdi {
         list<point> possible_deers <- get_beliefs_with_name(deer_at_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
         list<point> empty_deers <- get_beliefs_with_name(empty_deer_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
         possible_deers <- possible_deers - empty_deers;
-        
+        write "possible deer= " + possible_deers;
         if (empty(possible_deers)) {
             do remove_intention(has_energy, true); 
-            write "not having energy anymore";
+//            write "not having energy anymore";
         } else {
-        	
             target_w <- (possible_deers with_min_of (each distance_to self)).location;
-            write "new target = "+ target_w;
+            write "new target wolf= "+ target_w;
         }
         do remove_intention(choose_deer, true); 
     }
@@ -382,4 +386,4 @@ experiment HelloWorldBDI type: gui {
 		monitor "Number of tree" value: stat_nb_tree;
 		monitor "Number of wolf" value: stat_nb_wolf;
     }
-} 
+}
