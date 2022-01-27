@@ -386,4 +386,4 @@ experiment HelloWorldBDI type: gui {
 		monitor "Number of tree" value: stat_nb_tree;
 		monitor "Number of wolf" value: stat_nb_wolf;
     }
-}
+} 
