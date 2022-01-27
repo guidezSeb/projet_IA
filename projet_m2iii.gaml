@@ -1,11 +1,12 @@
 model HelloWorldBDI
 
 global {
-    int nb_tree <- 0; 
+    int nb_tree <- 40; 
     int nb_deer <- 20;
     int nb_wolf <- 20;
     float step <- 10#mn;
     geometry shape <- square(20 #km);
+    float size_shape <- 20 #km;
     
     string tree_at_location <- "tree_at_location";
     string empty_tree_location <- "empty_tree_location";
@@ -22,6 +23,8 @@ global {
     predicate find_branch <- new_predicate("find branch");
     predicate share_information <- new_predicate("share information") ;
     
+    
+	//define a new predicate that will be used as a desire
 	predicate deer_location <- new_predicate(deer_at_location) ;
     predicate has_energy <- new_predicate("extract energy");
     predicate eat_energy <- new_predicate("eat energy") ;
@@ -102,8 +105,15 @@ species tree control: simple_bdi {
 	
 	//int branch <- rnd(1,20);
     float max_branch <- 20.0 ;
-    float branch_prod <- rnd(5.0) ;
+    float branch_prod <- rnd(growing_tree * 5) ; //2 branch per growing height
     float branch <- rnd(20.0) max: max_branch update: branch + branch_prod ;
+    float surface_spread_x <- rnd(-1.5 #km, 1.5 #km);
+    float surface_spread_y <- rnd(-1.5 #km, 1.5 #km);
+    float max_height <-  20.0 #m;
+    float growing_tree<- rnd(0.2#cm, 0.4#cm);
+    float size <- rnd(0.2 #m, 0.8 #m) max: max_height update: size + growing_tree;
+    float proba_spreading <- 0.1;
+    bool spread_tree <- true;
     
     // coloration des cellules de la grid en fonction de leur niveau de nourriture disponible
     rgb color <- rgb(int(255 * (1 - branch)), 255, int(255 * (1 - branch))) 
@@ -112,9 +122,42 @@ species tree control: simple_bdi {
     // ajout d'une varibale neighbor2 qui contient la liste des cellules voisines à une distance de 2
    
  aspect default {
-    draw triangle(600 + branch * 20) color: (branch > 0) ? color : color border: #black;  
+    draw triangle(600 + size * 20) color: (branch > 0) ? color : color border: #black;  
     }
+   
     
+     reflex spread when: (size <= max_height) and (flip(proba_spreading)) and (spread_tree = true) {
+//     	 write "size= " + size + "max_height= " + max_height;
+        create species(self) number: 2 {
+            point child_pos <- myself.location + {surface_spread_x, surface_spread_y};
+            float child_pos_x <- child_pos.x;
+            float child_pos_y <- child_pos.y;
+              //check pos_x into surface map
+            if  (child_pos_x < 0.0) {
+            	child_pos_x <-(child_pos_x + size_shape);
+            } 
+            else  if  (child_pos_x > size_shape) {
+            	child_pos_x <-(child_pos_x - size_shape);
+            } 
+             else{ 
+             	child_pos_x <- child_pos_x;
+             }
+            //check pos_y into surface map
+            if  (child_pos_y < 0.0) {
+            	child_pos_y <-(child_pos_y + size_shape);
+            } 
+            else  if  (child_pos_y > size_shape) {
+            	child_pos_y <-(child_pos_y - size_shape);
+            } 
+             else{ 
+             	child_pos_y <- child_pos_y;
+             }
+            
+            child_pos <- {child_pos_x, child_pos_y};
+            location <- child_pos;
+            myself.spread_tree <- false;
+        }
+    }
 
 }
 
@@ -144,20 +187,19 @@ species deer  skills: [moving] control:simple_bdi {
     float proba_reproduce<- 0.01; //0.01 chance to reproduce
     int energy_reproduce<- 30;
     int nb_max_offsprings <- 1;
-    
+
     
     aspect default {
         draw square(300) color: #black ;
     }
     
-	//define a new predicate that will be used as a desire
-	
 	
 	//at init, add the find_branch to the agent desire base
 	init {
 		do add_desire(find_tree);
 	}
 	
+	//deer only have one child
 	reflex reproduce when: (energy >= energy_reproduce) and (flip(proba_reproduce)) {
 		
 		create species(self) number: 1 {
@@ -184,6 +226,7 @@ species deer  skills: [moving] control:simple_bdi {
 		do die;
 	}
     
+    
     rule belief: tree_location new_desire: has_branch strength: 2.0;
     rule belief: has_branch new_desire: eat_branch strength: 3.0;
     
@@ -192,6 +235,7 @@ species deer  skills: [moving] control:simple_bdi {
 	        do wander;
 	 }
 	 
+	 
  	plan get_branch intention:has_branch {
 	    if (target = nil) {
 	        do add_subintention(get_current_intention(),choose_tree, true);
@@ -199,7 +243,9 @@ species deer  skills: [moving] control:simple_bdi {
 	    } else {
 	        do goto target: target ;
 	        if (target = location)  {
+	        	
 	        tree current_tree<- tree first_with (target = each.location);
+	        if (!dead(current_tree)) {
 	        //eat until they have almost their energy back
 	        if current_tree.branch > 0 and energy < max_energy - 10{
 	            do add_belief(has_branch);
@@ -210,7 +256,9 @@ species deer  skills: [moving] control:simple_bdi {
 	        }
 	        target <- nil;
 	        }
-	    }   
+	    }  
+	    
+	    } 
     }
     
     plan share_information_to_friends intention: share_information instantaneous: true{
@@ -272,16 +320,14 @@ species wolf  skills: [moving] control:simple_bdi {
 		do add_desire(find_deer);
 	}
 	
-//	reflex reproduce when: (energy_w >= energy_w_reproduce) and (flip(proba_reproduce_w)) {
-//		
-//		create species(self) number: 1 {
-//			create wolf number: 1;
-//			location <- myself.location;
-//			energy_w <- myself.energy_w - energy_w_reproduce;
-//		}
-//
-//		
-//	}
+	//wolf only have one child
+	reflex reproduce when: (energy_w >= energy_w_reproduce) and (flip(proba_reproduce_w)) {
+		create species(self) number: 1 {
+			create wolf number: 1;
+			location <- myself.location;
+			energy_w <- myself.energy_w - energy_w_reproduce;
+		}
+	}
 	
 	 perceive target: deer where (each.energy > 0) in: view_dist {
 	    focus id:deer_at_location var:location;
@@ -313,30 +359,55 @@ species wolf  skills: [moving] control:simple_bdi {
 	        do add_subintention(get_current_intention(),choose_deer, true);
 	        do current_intention_on_hold();
 	    } else {
+	    	if (!dead(agent_perceived)) {
 	        do goto target: agent_perceived.location ;
-	        if (target_w = location)  {
+	        //where the agent want to go
+	        if ( target_w = agent_perceived.location)  {
 	        
 			//write dead(agent_perceived);
 	        //eat until they have almost their energy_w back
 	        //if deer alive
-	        if (dead(agent_perceived) = false ) {
+	        
 	        	//if deer has energy and wolf not have max energy
 	        if (agent_perceived.energy > 0 and energy_w < max_energy_w){
-	           energy_w <- energy_w + agent_perceived.energy;
-	            do add_belief(has_energy);
-	            ask agent_perceived {do die;}
+//	        	write "wolf energy before: "+ energy_w;
+//	           write "loup : " + name;
+	          
+	             do add_belief(has_energy);
+//	            write "deer energy : "+ agent_perceived.energy;
+//	             write "wolf energy after: "+ energy_w;
+	          
 	        } else {
-	            do remove_belief(new_predicate(deer_at_location, ["location_value"::target_w]));
-	            do add_belief(new_predicate(empty_deer_location, ["location_value"::target_w]));
+	            do remove_belief(new_predicate(deer_at_location, ["location_value"::agent_perceived.location]));
+	            do add_belief(new_predicate(empty_deer_location, ["location_value"::agent_perceived.location]));
 	            
 	            
 	        }
-	        target_w <- nil;
+	    
 	        }
+	            target_w <- nil;
+	        
 	        
 	        }
 	    }   
     }
+    
+    	plan transfer_energy intention: eat_energy when: has_belief(has_energy){
+			do remove_belief(has_energy);
+			do remove_intention(eat_energy, true);
+//			 write name +" energy= " + energy_w + " location " + agent_perceived.location;
+			 if (!dead(agent_perceived)) {
+			 energy_w <- energy_w + agent_perceived.energy;
+			 	}
+			 	else{
+			 		energy_w <- energy_w;
+			 	}
+			 do add_intention(find_deer);
+			
+			 ask agent_perceived {do die;}
+
+	
+	}
     
     plan share_information_to_friends intention: share_information_w instantaneous: true{
     list<wolf> my_friends_wolf <- list<wolf>((social_link_base where (each.liking > 0)) collect each.agent);
@@ -358,13 +429,13 @@ species wolf  skills: [moving] control:simple_bdi {
         list<point> possible_deers <- get_beliefs_with_name(deer_at_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
         list<point> empty_deers <- get_beliefs_with_name(empty_deer_location) collect (point(get_predicate(mental_state (each)).values["location_value"]));
         possible_deers <- possible_deers - empty_deers;
-        write "possible deer= " + possible_deers;
+//        write "possible deer= " + possible_deers;
         if (empty(possible_deers)) {
             do remove_intention(has_energy, true); 
 //            write "not having energy anymore";
         } else {
             target_w <- (possible_deers with_min_of (each distance_to self)).location;
-            write "new target wolf= "+ target_w;
+//            write "new target wolf= "+ target_w;
         }
         do remove_intention(choose_deer, true); 
     }
@@ -386,4 +457,4 @@ experiment HelloWorldBDI type: gui {
 		monitor "Number of tree" value: stat_nb_tree;
 		monitor "Number of wolf" value: stat_nb_wolf;
     }
-} 
+}
