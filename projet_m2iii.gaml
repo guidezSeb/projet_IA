@@ -442,6 +442,7 @@ species wolf  skills: [moving] control:simple_bdi {
 //    END wolf
 }
 
+
 experiment HelloWorldBDI type: gui {
     output {
         display map type: opengl {
